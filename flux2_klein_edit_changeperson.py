@@ -29,6 +29,7 @@ OUT_EXT = ".jpg"
 SUPPORTED_EXTS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")
 
 OVERWRITE = False
+MAX_SAMPLE = None  # None 表示处理全部图片；整数表示只处理排序后的前 N 张
 
 
 # ============================================================
@@ -108,6 +109,14 @@ def collect_image_files(input_folder):
     ]
     image_files.sort(key=lambda x: x.lower())
     return image_files
+
+
+def apply_max_sample(image_files, max_sample):
+    if max_sample is None:
+        return image_files
+    if max_sample < 0:
+        raise ValueError("MAX_SAMPLE must be None or a non-negative integer.")
+    return image_files[:max_sample]
 
 
 def split_data_round_robin(image_files, world_size):
@@ -232,6 +241,7 @@ def main():
 
     cfg = load_yaml(YAML_PATH)
     image_files = collect_image_files(INPUT_DIR)
+    image_files = apply_max_sample(image_files, MAX_SAMPLE)
 
     if len(image_files) == 0:
         raise RuntimeError(f"No images found in: {INPUT_DIR}")
