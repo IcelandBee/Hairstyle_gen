@@ -15,7 +15,7 @@ from diffusers import Flux2KleinPipeline
 YAML_PATH = "keywords-CN.yaml"
 
 INPUT_DIR = "/DATA_71/b59900515/data/candidate_hair/tgt"
-OUTPUT_DIR = "/DATA_71/b59900515/data/candidate_hair/ref_flux2_klein"
+OUTPUT_BASE_DIR = "/DATA_71/b59900515/data/candidate_hair/ref_flux2_klein"
 
 MODEL_PATH = "black-forest-labs/FLUX.2-klein-base-9B"
 
@@ -30,6 +30,9 @@ SUPPORTED_EXTS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")
 
 OVERWRITE = False
 MAX_SAMPLE = None  # None 表示处理全部图片；整数表示只处理排序后的前 N 张
+VALID_ID_EDIT_MODES = ("age", "gender", "ethnicity")
+ID_EDIT_MODE = os.environ.get("ID_EDIT_MODE", "age").strip().lower()
+OUTPUT_DIR = f"{OUTPUT_BASE_DIR}_{ID_EDIT_MODE}"
 
 
 # ============================================================
@@ -65,6 +68,9 @@ def load_yaml(yaml_path):
         "lighting",
         "hair_type_1",
         "hair_type_2",
+        "age",
+        "gender",
+        "ethnicity",
     ]
 
     for key in required_keys:
@@ -73,7 +79,30 @@ def load_yaml(yaml_path):
     return cfg
 
 
-def build_prompt(idx, sample):
+def validate_id_edit_mode(edit_mode):
+    if edit_mode not in VALID_ID_EDIT_MODES:
+        valid_modes = ", ".join(VALID_ID_EDIT_MODES)
+        raise ValueError(f"ID_EDIT_MODE must be one of: {valid_modes}")
+    return edit_mode
+
+
+def build_identity_clause(sample, edit_mode):
+    edit_mode = validate_id_edit_mode(edit_mode)
+
+    if edit_mode == "age":
+        age = random.choice(sample["age"])
+        return f"将人物年龄阶段改为{age}，保持原图中可见的性别表达和人种外观尽量自然一致，"
+
+    if edit_mode == "gender":
+        gender = random.choice(sample["gender"])
+        return f"将人物性别表达改为{gender}，保持原图中可见的年龄阶段和人种外观尽量自然一致，"
+
+    ethnicity = random.choice(sample["ethnicity"])
+    return f"将人物身份改为具有{ethnicity}外貌特征的人物，保持原图中可见的年龄阶段和性别表达尽量自然一致，"
+
+
+def build_prompt(idx, sample, edit_mode=None):
+    edit_mode = validate_id_edit_mode(edit_mode or ID_EDIT_MODE)
     colors_list = sample["color"]
     clothes_list = sample["clothing"]
     posture_list = sample["posture"]
@@ -89,15 +118,20 @@ def build_prompt(idx, sample):
     element = random.choice(environmental_elements_list)
     lighting = random.choice(lighting_list)
     hairtype = random.choice(hairtype_list)
+    identity_clause = build_identity_clause(sample, edit_mode)
 
     prompt = (
-        f"保持头发的颜色样式均不变，"
-        f"换成一个新的人物肖像照，穿着{clothes_color}的{clothes}，保持头发的颜色样式均不变，"
-        f"姿势是{posture}，场景更换成{location}，"
-        f"背景中有{element}，4K，电影级构图。"
+        f"保持输入图中人物的发型、发色、头发长度、刘海形状和头发轮廓完全不变，"
+        f"{identity_clause}"
+        f"只改变面部身份、年龄感、性别表达或肤色五官特征，"
+        f"不要改变发型，不要改变发色，不要改变头发长度，不要添加帽子或头饰，"
+        f"人物肖像照，真实摄影风格，清晰面部，4K。"
     )
 
-    negative_prompt = "变化发色，躯体畸形"
+    negative_prompt = (
+        "改变发型，改变发色，改变头发长度，头发变短，头发变长，刘海变化，卷直变化，"
+        "戴帽子，头饰，遮挡头发，头发缺失，躯体畸形，面部扭曲，低质量"
+    )
 
     return prompt, negative_prompt
 
@@ -239,6 +273,7 @@ def main():
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA device found.")
 
+    validate_id_edit_mode(ID_EDIT_MODE)
     cfg = load_yaml(YAML_PATH)
     image_files = collect_image_files(INPUT_DIR)
     image_files = apply_max_sample(image_files, MAX_SAMPLE)

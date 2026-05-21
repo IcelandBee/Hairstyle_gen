@@ -1,0 +1,21 @@
+# Identity-edit keyword additions.
+# Copy these fields into your working keywords-CN.yaml.
+
+age:
+  - 儿童
+  - 青少年
+  - 青年
+  - 中年
+  - 老年
+
+gender:
+  - 男性
+  - 女性
+
+ethnicity:
+  - 东亚人
+  - 南亚人
+  - 白人
+  - 黑人
+  - 拉丁裔
+  - 中东人
