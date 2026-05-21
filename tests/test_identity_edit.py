@@ -56,7 +56,12 @@ class IdentityEditTest(unittest.TestCase):
                 module = _load_script(script_name)
                 prompt, negative_prompt = module.build_prompt(0, _sample(), edit_mode="age")
 
+                self.assertIn("换成一个新的人物肖像照", prompt)
                 self.assertIn("年龄阶段改为老年", prompt)
+                self.assertIn("穿着黑色的衬衫", prompt)
+                self.assertIn("姿势是正面站立", prompt)
+                self.assertIn("场景更换成摄影棚", prompt)
+                self.assertIn("背景中有纯色背景", prompt)
                 self.assertIn("保持输入图中人物的发型", prompt)
                 self.assertIn("不要改变发型", prompt)
                 self.assertIn("改变发型", negative_prompt)

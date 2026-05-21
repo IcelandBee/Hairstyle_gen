@@ -122,10 +122,11 @@ def build_prompt(idx, sample, edit_mode=None):
 
     prompt = (
         f"保持输入图中人物的发型、发色、头发长度、刘海形状和头发轮廓完全不变，"
-        f"{identity_clause}"
-        f"只改变面部身份、年龄感、性别表达或肤色五官特征，"
-        f"不要改变发型，不要改变发色，不要改变头发长度，不要添加帽子或头饰，"
-        f"人物肖像照，真实摄影风格，清晰面部，4K。"
+        f"换成一个新的人物肖像照，{identity_clause}"
+        f"穿着{clothes_color}的{clothes}，保持头发的颜色样式均不变，"
+        f"姿势是{posture}，场景更换成{location}，"
+        f"背景中有{element}，不要改变发型，不要改变发色，不要改变头发长度，"
+        f"不要添加帽子或头饰，4K，电影级构图。"
     )
 
     negative_prompt = (
