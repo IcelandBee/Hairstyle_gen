@@ -20,9 +20,10 @@ OUTPUT_BASE_DIR = "/DATA_71/b59900515/data/candidate_hair/ref_flux2_klein"
 MODEL_PATH = "black-forest-labs/FLUX.2-klein-base-9B"
 
 STEPS = 4
-GUIDANCE_SCALE = 4.0
+GUIDANCE_SCALE = 3.0
 
 SEED = None  # None 表示每张图随机
+NUM_SEEDS_PER_IMAGE = 4
 KEEP_SIZE = True
 OUT_EXT = ".jpg"
 
@@ -32,7 +33,7 @@ OVERWRITE = False
 MAX_SAMPLE = None  # None 表示处理全部图片；整数表示只处理排序后的前 N 张
 VALID_ID_EDIT_MODES = ("age", "gender", "ethnicity")
 ID_EDIT_MODE = os.environ.get("ID_EDIT_MODE", "age").strip().lower()
-OUTPUT_DIR = f"{OUTPUT_BASE_DIR}_{ID_EDIT_MODE}"
+OUTPUT_DIR = f"{OUTPUT_BASE_DIR}_{ID_EDIT_MODE}_cfg{GUIDANCE_SCALE:g}_n{NUM_SEEDS_PER_IMAGE}"
 
 
 # ============================================================
@@ -91,14 +92,17 @@ def build_identity_clause(sample, edit_mode):
 
     if edit_mode == "age":
         age = random.choice(sample["age"])
-        return f"将人物年龄阶段改为{age}，保持原图中可见的性别表达和人种外观尽量自然一致，"
+        return f"只修改脸部区域，将面部年龄特征改为{age}，保持原图中可见的性别表达和人种外观尽量自然一致，"
 
     if edit_mode == "gender":
         gender = random.choice(sample["gender"])
-        return f"将人物性别表达改为{gender}，保持原图中可见的年龄阶段和人种外观尽量自然一致，"
+        return (
+            f"只修改脸部区域，将面部性别特征改为{gender}，保持原图中可见的年龄阶段和人种外观尽量自然一致，"
+            f"即使该发型与目标性别不常见，也必须保持原发型，"
+        )
 
     ethnicity = random.choice(sample["ethnicity"])
-    return f"将人物身份改为具有{ethnicity}外貌特征的人物，保持原图中可见的年龄阶段和性别表达尽量自然一致，"
+    return f"只修改脸部区域，将面部五官和肤色特征改为具有{ethnicity}外貌特征，保持原图中可见的年龄阶段和性别表达尽量自然一致，"
 
 
 def build_prompt(idx, sample, edit_mode=None):
@@ -154,6 +158,11 @@ def apply_max_sample(image_files, max_sample):
     return image_files[:max_sample]
 
 
+def build_output_path(filename, candidate_idx, seed_value):
+    base = os.path.splitext(filename)[0]
+    return os.path.join(OUTPUT_DIR, f"{base}_cand{candidate_idx:02d}_seed{seed_value}{OUT_EXT}")
+
+
 def split_data_round_robin(image_files, world_size):
     shards = [[] for _ in range(world_size)]
 
@@ -200,15 +209,6 @@ def worker_process(rank, world_size, shard, cfg):
 
     for local_idx, (global_idx, filename) in enumerate(shard, start=1):
         in_path = os.path.join(INPUT_DIR, filename)
-        base = os.path.splitext(filename)[0]
-        out_path = os.path.join(OUTPUT_DIR, f"{base}{OUT_EXT}")
-
-        if os.path.exists(out_path) and not OVERWRITE:
-            print(
-                f"[Worker {rank}] [{local_idx}/{total}] Skip existing: {out_path}",
-                flush=True,
-            )
-            continue
 
         try:
             src = Image.open(in_path).convert("RGB")
@@ -225,43 +225,53 @@ def worker_process(rank, world_size, shard, cfg):
         random.seed(global_idx + 12345)
         prompt, negative_prompt = build_prompt(global_idx, cfg)
 
-        if SEED is None:
-            seed_value = random.randint(1, 2 ** 63)
-        else:
-            seed_value = SEED + global_idx
-
-        generator = make_generator(device, seed_value)
-
         print(f"\n[Worker {rank}] PROCESSING: {in_path}", flush=True)
         print(f"[Worker {rank}] Prompt: {prompt}", flush=True)
-        print(f"[Worker {rank}] Seed: {seed_value}", flush=True)
 
-        try:
-            with torch.inference_mode():
-                out = pipe(
-                    image=src,
-                    prompt=prompt,
-                    height=h,
-                    width=w,
-                    num_inference_steps=STEPS,
-                    guidance_scale=GUIDANCE_SCALE,
-                    num_images_per_prompt=1,
-                    generator=generator,
+        for candidate_idx in range(NUM_SEEDS_PER_IMAGE):
+            if SEED is None:
+                seed_value = random.randint(1, 2 ** 63)
+            else:
+                seed_value = SEED + global_idx * NUM_SEEDS_PER_IMAGE + candidate_idx
+
+            out_path = build_output_path(filename, candidate_idx, seed_value)
+
+            if os.path.exists(out_path) and not OVERWRITE:
+                print(
+                    f"[Worker {rank}] [{local_idx}/{total}] Skip existing: {out_path}",
+                    flush=True,
+                )
+                continue
+
+            generator = make_generator(device, seed_value)
+            print(f"[Worker {rank}] Candidate {candidate_idx}: Seed {seed_value}", flush=True)
+
+            try:
+                with torch.inference_mode():
+                    out = pipe(
+                        image=src,
+                        prompt=prompt,
+                        height=h,
+                        width=w,
+                        num_inference_steps=STEPS,
+                        guidance_scale=GUIDANCE_SCALE,
+                        num_images_per_prompt=1,
+                        generator=generator,
+                    )
+
+                out_img = out.images[0]
+                out_img.save(out_path)
+
+                print(
+                    f"[Worker {rank}] [{local_idx}/{total}] 保存成功: {out_path}",
+                    flush=True,
                 )
 
-            out_img = out.images[0]
-            out_img.save(out_path)
-
-            print(
-                f"[Worker {rank}] [{local_idx}/{total}] 保存成功: {out_path}",
-                flush=True,
-            )
-
-        except Exception as e:
-            print(
-                f"[Worker {rank}] [ERROR] 处理失败: {filename} | {e}",
-                flush=True,
-            )
+            except Exception as e:
+                print(
+                    f"[Worker {rank}] [ERROR] 处理失败: {filename} | candidate={candidate_idx} | {e}",
+                    flush=True,
+                )
 
     print(f"[Worker {rank}] Finished.", flush=True)
 
