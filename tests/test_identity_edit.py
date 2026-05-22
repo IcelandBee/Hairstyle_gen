@@ -103,7 +103,8 @@ class IdentityEditTest(unittest.TestCase):
 
                 path = module.build_output_path("portrait.jpg", 2, 12345)
 
-                self.assertTrue(path.endswith("_cand02_seed12345.jpg"))
+                self.assertIn("cand02", path)
+                self.assertTrue(path.endswith("portrait_seed12345.jpg"))
 
 
 if __name__ == "__main__":

@@ -160,7 +160,8 @@ def apply_max_sample(image_files, max_sample):
 
 def build_output_path(filename, candidate_idx, seed_value):
     base = os.path.splitext(filename)[0]
-    return os.path.join(OUTPUT_DIR, f"{base}_cand{candidate_idx:02d}_seed{seed_value}{OUT_EXT}")
+    candidate_dir = os.path.join(OUTPUT_DIR, f"cand{candidate_idx:02d}")
+    return os.path.join(candidate_dir, f"{base}_seed{seed_value}{OUT_EXT}")
 
 
 def split_data_round_robin(image_files, world_size):
@@ -235,6 +236,7 @@ def worker_process(rank, world_size, shard, cfg):
                 seed_value = SEED + global_idx * NUM_SEEDS_PER_IMAGE + candidate_idx
 
             out_path = build_output_path(filename, candidate_idx, seed_value)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
             if os.path.exists(out_path) and not OVERWRITE:
                 print(
